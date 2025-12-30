@@ -1,6 +1,13 @@
+
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
+from fuzzy_plug import FuzzyPlug
+from fuzzy_lamp import FuzzyLamp
+from fuzzy_ac import FuzzyAC
+from fuzzy_fan import FuzzyFan
+from fuzzy_exhaust_fan import FuzzyExhaustFan
+from fuzzy_efficiency import FuzzyEfficiency
+from fuzzy_plotter import FuzzyPlotter
 
 # --- 1. Page Configuration ---
 st.set_page_config(
@@ -9,250 +16,137 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- 2. Calculation Logic ---
-def calculate_energy(ac_val, fan_val, plug_val, lamp_val):
-    """
-    Calculates Energy Usage and Efficiency based on weighted formula.
-    
-    Formula:
-    E_usage = w1*AC + w2*Fan + w3*Plug + w4*Lamp
-    Efficiency = 100 - E_usage
-    
-    Weights: AC=0.4, Fan=0.2, Plug=0.2, Lamp=0.2
-    """
-    # Weights
-    w_ac = 0.4
-    w_fan = 0.2
-    w_plug = 0.2
-    w_lamp = 0.2
-    
-    # Normalize Fan (0-5) to (0-100) for the formula to work with the weight
-    # 0->0, 5->100. Factor is 20.
-    fan_norm = fan_val * 20
-    
-    # Weighted Contributions
-    c_ac = w_ac * ac_val
-    c_fan = w_fan * fan_norm
-    c_plug = w_plug * plug_val
-    c_lamp = w_lamp * lamp_val
-    
-    # Total Usage Score
-    e_usage = c_ac + c_fan + c_plug + c_lamp
-    
-    # Energy Efficiency Score (Inversely proportional)
-    efficiency = 100 - e_usage
-    
-    # Clamp results to 0-100 just in case
-    e_usage = max(0, min(100, e_usage))
-    efficiency = max(0, min(100, efficiency))
-    
-    return efficiency, e_usage, c_ac, c_fan, c_plug, c_lamp
-
-def get_efficiency_label(efficiency_score):
-    """Maps efficiency score to linguistic terms."""
-    if efficiency_score >= 80:
-        return "Very High", "#38761d", "🌱", "white" # High Efficiency = Good
-    elif efficiency_score >= 60:
-        return "High", "#93c47d", "✅", "black"
-    elif efficiency_score >= 40:
-        return "Medium", "#ffd966", "🟡", "black"
-    elif efficiency_score >= 20:
-        return "Low", "#e69138", "⚠️", "black"
-    else:
-        return "Very Low", "#cc0000", "🔥", "white" # Low Efficiency = Bad
+# --- 4. Sidebar Inputs ---
 
 
-# --- 3. Sidebar Inputs (Collapsible Drawer for Room) ---
-#1.Living Room
-with st.sidebar.expander("🛏️ Living Room", expanded=False):
+def room_ui(room_name, key_suffix, is_kitchen=False):
+    with st.sidebar.expander(f"🛏️ {room_name}", expanded=False):
+        if not is_kitchen:
+            # FUZZY AC
+            ac_on = st.toggle(f"Power AC {room_name}", value=False, key=f"acon{key_suffix}")
+            if ac_on:
+                val_temp = st.select_slider(f"1. AC Temp (°C)", options=list(range(28, 15, -1)), value=24, key=f"temp{key_suffix}")
+                ac_s, a_off, a_low, a_med, a_high = FuzzyAC.calculate(val_temp)
+                st.pyplot(FuzzyPlotter.plot_live_fuzzy(val_temp, a_off, a_low, a_med, a_high, 28, "AC"))
+            else:
+                ac_s = 0.0
+                st.info("AC is turned off")
+            # FUZZY FAN
+            val_fan = st.slider(f"2. Fan Speed", 0, 5, 0, 1, key=f"fan{key_suffix}")
+            f_s, f_off, f_low, f_med, f_high = FuzzyFan.calculate(val_fan)
+            st.pyplot(FuzzyPlotter.plot_live_fuzzy(val_fan, f_off, f_low, f_med, f_high, 5, "Fan"))
+            # FUZZY PLUG
+            val_v = st.slider(f"3. Plug Voltage (0-240V)", 0, 240, 0, 1, key=f"v{key_suffix}")
+            v_s, p_off, p_low, p_med, p_high = FuzzyPlug.calculate(val_v)
+            st.pyplot(FuzzyPlotter.plot_live_fuzzy(val_v, p_off, p_low, p_med, p_high, 240, "Plug"))
+            # FUZZY LAMP
+            val_l = st.slider(f"4. Lamp Intensity (0-100%)", 0, 100, 0, 1, key=f"l{key_suffix}")
+            l_s, l_off, l_low, l_med, l_high = FuzzyLamp.calculate(val_l)
+            st.pyplot(FuzzyPlotter.plot_live_fuzzy(val_l, l_off, l_low, l_med, l_high, 100, "Lamp"))
+            # Always return 5 values for consistency (ac, fan, exhaust, plug, lamp)
+            return ac_s, f_s, 0.0, v_s, l_s
+        else:
+            # Kitchen: Exhaust Fan (3 speed, replaces AC)
+            ac_s = 0.0
+            val_exhaust = st.slider(f"1. Exhaust Fan Speed", 0, 3, 0, 1, key=f"exfan{key_suffix}")
+            exhaust_s, ex_off, ex_low, ex_med, ex_high = FuzzyExhaustFan.calculate(val_exhaust)
+            st.pyplot(FuzzyPlotter.plot_live_fuzzy(val_exhaust, ex_off, ex_low, ex_med, ex_high, 3, "Fan"))
+            # Kitchen: Regular Fan
+            val_fan = st.slider(f"2. Fan Speed", 0, 5, 0, 1, key=f"fan{key_suffix}")
+            fan_s, f_off, f_low, f_med, f_high = FuzzyFan.calculate(val_fan)
+            st.pyplot(FuzzyPlotter.plot_live_fuzzy(val_fan, f_off, f_low, f_med, f_high, 5, "Fan"))
+            # FUZZY PLUG
+            val_v = st.slider(f"3. Plug Voltage (0-240V)", 0, 240, 0, 1, key=f"v{key_suffix}")
+            v_s, p_off, p_low, p_med, p_high = FuzzyPlug.calculate(val_v)
+            st.pyplot(FuzzyPlotter.plot_live_fuzzy(val_v, p_off, p_low, p_med, p_high, 240, "Plug"))
+            # FUZZY LAMP
+            val_l = st.slider(f"4. Lamp Intensity (0-100%)", 0, 100, 0, 1, key=f"l{key_suffix}")
+            l_s, l_off, l_low, l_med, l_high = FuzzyLamp.calculate(val_l)
+            st.pyplot(FuzzyPlotter.plot_live_fuzzy(val_l, l_off, l_low, l_med, l_high, 100, "Lamp"))
+            return ac_s, fan_s, exhaust_s, v_s, l_s
 
-    # 1. Air Conditioner
-    # Mapping: off->0, low->30, medium->60, high->90
-    ac_map1 = {'Off': 0, 'Low': 30, 'Medium': 60, 'High': 90}
-    ac_choice1 = st.selectbox("1. Air Conditioner Usage", options=list(ac_map1.keys()), index=0, key="ac1")
-    val_ac1 = ac_map1[ac_choice1]
 
-    # 2. Fan Speed
-    # Range 0-5
-    val_fan1 = st.slider("2. Fan Speed (0-5)", 0, 5, 0, 1, key="fan1")
+v1 = room_ui("Living Room", "1")
+v2 = room_ui("Son's Room", "2")
+v3 = room_ui("Parent's Room", "3")
+v4 = room_ui("Kitchen", "4", is_kitchen=True)
 
-    # 3. Plug Load
-    # Mapping: off->0, low->25, medium->60, high->90
-    plug_map1 = {'Off': 0, 'Low': 25, 'Medium': 60, 'High': 90}
-    plug_choice1 = st.selectbox("3. Plug Load", options=list(plug_map1.keys()), index=0, key="plug1")
-    val_plug1 = plug_map1[plug_choice1]
+# --- 5. Main Content ---
+st.title("🏠 Smart Home Energy Efficiency Tracker (Fuzzy Logic)")
+st.markdown("All inputs and the final output now utilize **Fuzzy Inference Systems** for precise environmental modeling.")
 
-    # 4. Lamp Load
-    # Mapping: off->0, low->20, medium->50, high->80
-    lamp_map1 = {'Off': 0, 'Low': 20, 'Medium': 50, 'High': 80}
-    lamp_choice1 = st.selectbox("4. Lamp / Lighting", options=list(lamp_map1.keys()), index=0, key="lamp1")
-    val_lamp1 = lamp_map1[lamp_choice1]
 
-    st.markdown("---")
-    st.info(f"**Raw Inputs:**\n\nAC: {val_ac1} | Fan: {val_fan1} | Plug: {val_plug1} | Lamp: {val_lamp1}")
 
-#2.Sons' Room
-with st.sidebar.expander("🛏️ Son's Room", expanded=False):
 
-    # 1. Air Conditioner
-    # Mapping: off->0, low->30, medium->60, high->90
-    ac_map2 = {'Off': 0, 'Low': 30, 'Medium': 60, 'High': 90}
-    ac_choice2 = st.selectbox("1. Air Conditioner Usage", options=list(ac_map2.keys()), index=0, key="ac2")
-    val_ac2 = ac_map2[ac_choice2]
+# Aggregate Inputs
+# For kitchen: v4 = (ac_s, fan_s, exhaust_s, v_s, l_s)
 
-    # 2. Fan Speed
-    # Range 0-5
-    val_fan2 = st.slider("2. Fan Speed (0-5)", 0, 5, 0, 1, key="fan2")
+ac_scores = [v1[0], v2[0], v3[0], v4[0]]
+fan_scores = [v1[1], v2[1], v3[1], v4[1]]
+plug_scores = [v1[3], v2[3], v3[3], v4[3]]
+lamp_scores = [v1[4], v2[4], v3[4], v4[4]]
 
-    # 3. Plug Load
-    # Mapping: off->0, low->25, medium->60, high->90
-    plug_map2 = {'Off': 0, 'Low': 25, 'Medium': 60, 'High': 90}
-    plug_choice2 = st.selectbox("3. Plug Load", options=list(plug_map2.keys()), index=0, key="plug2")
-    val_plug2 = plug_map2[plug_choice2]
+avg_ac = np.mean(ac_scores)
+avg_fan = np.mean(fan_scores)
+avg_plug = np.mean(plug_scores)
+avg_lamp = np.mean(lamp_scores)
 
-    # 4. Lamp Load
-    # Mapping: off->0, low->20, medium->50, high->80
-    lamp_map2 = {'Off': 0, 'Low': 20, 'Medium': 50, 'High': 80}
-    lamp_choice2 = st.selectbox("4. Lamp / Lighting", options=list(lamp_map2.keys()), index=0, key="lamp2")
-    val_lamp2 = lamp_map2[lamp_choice2]
+eff, usage, m_vl, m_l, m_m, m_h = FuzzyEfficiency.calculate_energy(avg_ac, avg_fan, avg_plug, avg_lamp)
+label, color, icon, text_color = FuzzyEfficiency.get_efficiency_label(eff)
 
-    st.markdown("---")
-    st.info(f"**Raw Inputs:**\n\nAC: {val_ac2} | Fan: {val_fan2} | Plug: {val_plug2} | Lamp: {val_lamp2}")
-
-#3.Parent's Room
-with st.sidebar.expander("🛏️ Parent's Room", expanded=False):
-
-    # 1. Air Conditioner
-    # Mapping: off->0, low->30, medium->60, high->90
-    ac_map3 = {'Off': 0, 'Low': 30, 'Medium': 60, 'High': 90}
-    ac_choice3 = st.selectbox("1. Air Conditioner Usage", options=list(ac_map3.keys()), index=0, key="ac3")
-    val_ac3 = ac_map3[ac_choice3]
-
-    # 2. Fan Speed
-    # Range 0-5
-    val_fan3 = st.slider("2. Fan Speed (0-5)", 0, 5, 0, 1, key="fan3")
-
-    # 3. Plug Load
-    # Mapping: off->0, low->25, medium->60, high->90
-    plug_map3 = {'Off': 0, 'Low': 25, 'Medium': 60, 'High': 90}
-    plug_choice3 = st.selectbox("3. Plug Load", options=list(plug_map3.keys()), index=0, key="plug3")
-    val_plug3 = plug_map3[plug_choice3]
-
-    # 4. Lamp Load
-    # Mapping: off->0, low->20, medium->50, high->80
-    lamp_map3 = {'Off': 0, 'Low': 20, 'Medium': 50, 'High': 80}
-    lamp_choice3 = st.selectbox("4. Lamp / Lighting", options=list(lamp_map3.keys()), index=0, key="lamp3")
-    val_lamp3 = lamp_map3[lamp_choice3]
-
-    st.markdown("---")
-    st.info(f"**Raw Inputs:**\n\nAC: {val_ac3} | Fan: {val_fan3} | Plug: {val_plug3} | Lamp: {val_lamp3}")
-
-#4.Kitchen
-with st.sidebar.expander("🛏️ Kitchen", expanded=False):
-
-    # 1. exhaust Fan
-    #Range 0-5
-    val_exhaust_fan = st.slider("2. Exhaust Fan Speed (0-3)", 0, 3, 0, 1, key="exfan")
-
-    # 2. Fan Speed
-    # Range 0-5
-    val_fan4 = st.slider("2. Fan Speed (0-5)", 0, 5, 0, 1, key="fan4")
-
-    # 3. Plug Load
-    # Mapping: off->0, low->25, medium->60, high->90
-    plug_map4 = {'Off': 0, 'Low': 25, 'Medium': 60, 'High': 90}
-    plug_choice4 = st.selectbox("3. Plug Load", options=list(plug_map4.keys()), index=0, key="plug4")
-    val_plug4 = plug_map4[plug_choice4]
-
-    # 4. Lamp Load
-    # Mapping: off->0, low->20, medium->50, high->80
-    lamp_map4 = {'Off': 0, 'Low': 20, 'Medium': 50, 'High': 80}
-    lamp_choice4 = st.selectbox("4. Lamp / Lighting", options=list(lamp_map4.keys()), index=0, key="lamp4")
-    val_lamp4 = lamp_map4[lamp_choice4]
-
-    st.markdown("---")
-    st.info(f"**Raw Inputs:**\n\Exhaust Fan: {val_exhaust_fan} | Fan: {val_fan4} | Plug: {val_plug4} | Lamp: {val_lamp4}")
-
-# --- 4. Main Content ---
-st.title("🏠 Smart Home Energy Efficiency Tracker")
-st.markdown("Calculates **Energy Efficiency** based on appliance usage. Lower usage results in higher efficiency.")
-# Aggregate Inputs from all rooms
-val_ac = (val_ac1 + val_ac2 + val_ac3)/3
-val_fan = (val_fan1 + val_fan2 + val_fan3 + val_fan4 + val_exhaust_fan)/4
-val_plug = (val_plug1 + val_plug2 + val_plug3 + val_plug4)/4
-val_lamp = (val_lamp1 + val_lamp2 + val_lamp3 + val_lamp4)/4
-# --- Calculation ---
-efficiency, usage_score, c_ac, c_fan, c_plug, c_lamp = calculate_energy(val_ac, val_fan, val_plug, val_lamp)
-label, color, icon, text_color = get_efficiency_label(efficiency)
-
-# --- Display Results ---
-col1, col2 = st.columns([1, 1.5])
+col1, col2 = st.columns([1, 1.2])
 
 with col1:
-    st.subheader("Efficiency Score")
+    st.subheader("Efficiency Status")
     st.markdown(f"""
     <div style="padding: 20px; border-radius: 10px; text-align: center; 
                 background-color: {color}; color: {text_color}; box-shadow: 2px 2px 10px rgba(0,0,0,0.1);">
         <h3 style="margin:0; color: {text_color};">EFFICIENCY LEVEL</h3>
-        <div style="font-size: 3em; margin: 15px 0;">{icon} {label.upper()}</div>
-        <p style="font-size: 1.2em; font-weight: bold;">{efficiency:.1f} / 100</p>
+        <div style="font-size: 3.5em; margin: 15px 0;">{icon} {label.upper()}</div>
+        <p style="font-size: 1.4em; font-weight: bold;">{eff:.1f} / 100</p>
         <hr style="border-color: {text_color}; opacity: 0.3;">
-        <p style="font-size: 0.9em;">Energy Usage Score: {usage_score:.1f}</p>
+        <p style="font-size: 0.9em;">Aggregate Usage Score: {usage:.1f}</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    st.info("💡 **Tip:** Higher Efficiency means you are saving more energy!")
 
 with col2:
-    st.subheader("Usage Breakdown")
-    # Bar chart showing contribution of each device to the Usage Score
-    
-    categories = ['Air Cond', 'Fan', 'Plug', 'Lamp']
-    values = [c_ac, c_fan, c_plug, c_lamp]
-    colors = ['#3498db', '#2ecc71', '#e74c3c', '#f1c40f']
-    
-    fig, ax = plt.subplots(figsize=(8, 4))
-    bars = ax.barh(categories, values, color=colors)
-    
-    # Add values to end of bars
-    for bar in bars:
-        width = bar.get_width()
-        label_x_pos = width + 1 if width < 90 else width - 5
-        ax.text(label_x_pos, bar.get_y() + bar.get_height()/2, 
-                f'{width:.1f}', va='center')
+    st.subheader("Global Efficiency Fuzzy Membership")
+    st.pyplot(FuzzyPlotter.plot_live_fuzzy(eff, m_vl, m_l, m_m, m_h, 100, "Efficiency"))
+    st.info(f"The blue marker indicates the system's defuzzified efficiency value: **{eff:.1f}%**.")
 
-    ax.set_xlabel('Weighted Contribution to Usage Score')
-    ax.set_xlim(0, 50) # Fixed limit helps visualization stability
-    ax.set_title(f'Total Usage Score: {usage_score:.1f}')
-    ax.grid(axis='x', linestyle='--', alpha=0.5)
-    
-    st.pyplot(fig)
+# --- 6. Educational & Methodology Section ---
+st.divider()
 
-# --- 5. Educational Section ---
-with st.expander("📚 View Formula & Logic Details"):
-    st.markdown("### 1. Calculation Formula")
-    st.latex(r"""
-    E_{usage} = 0.4(AC) + 0.2(Fan_{norm}) + 0.2(Plug) + 0.2(Lamp)
-    """)
-    st.latex(r"""
-    Efficiency = 100 - E_{usage}
-    """)
+with st.expander("🧮 View Calculation Methodology"):
+    st.markdown("### Energy Usage Formula")
+    st.latex(r"Usage_{total} = \sum (Weight_i \times Score_i)")
+    st.markdown("Where $Score_i$ is the defuzzified score for each appliance type across all rooms.")
     
-    st.markdown("### 2. Input Mappings")
-    st.markdown("""
-    - **Air Conditioner:** Off(0), Low(30), Medium(60), High(90)
-    - **Fan:** 0 to 5 (Normalized to 0-100 scale)
-    - **Plug:** Off(0), Low(25), Medium(60), High(90)
-    - **Lamp:** Off(0), Low(20), Medium(50), High(80)
-    """)
+    st.markdown("### Weights ($W_i$):")
+    cols = st.columns(4)
+    cols[0].metric("AC Weight", "0.4")
+    cols[1].metric("Fan Weight", "0.2")
+    cols[2].metric("Plug Weight", "0.2")
+    cols[3].metric("Lamp Weight", "0.2")
     
-    st.markdown("### 3. Output Categories")
-    st.markdown("""
-    | Efficiency Score | Level |
-    | :--- | :--- |
-    | 80 - 100 | **Very High** (Excellent) |
-    | 60 - 79 | **High** |
-    | 40 - 59 | **Medium** |
-    | 20 - 39 | **Low** |
-    | 0 - 19 | **Very Low** (High Consumption) |
-    """)
+    st.markdown("### Defuzzification (Centroid Method):")
+    st.latex(r"Score = \frac{\sum (\mu(x) \times Center_x)}{\sum \mu(x)}")
+    st.write("For each input, the system calculates the degree of membership $\mu(x)$ for Low, Medium, and High sets, then calculates a weighted average score based on set centers (e.g., Low=25, High=100).")
+
+with st.expander("📚 View Fuzzy Sets Definition"):
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("**Fan Speed (0-5):**")
+        st.markdown("- **Low**: 0.1 → 3.0 (Center: 1.5)")
+        st.markdown("- **Med**: 2.0 → 5.0 (Center: 3.5)")
+        st.markdown("- **High**: 4.0 → 5.1 (Center: 5.0)")
+        st.markdown("**AC (16-28°C):**")
+        st.markdown("- **Low Energy**: 25°C → 29°C")
+        st.markdown("- **Med Energy**: 22°C → 26°C")
+        st.markdown("- **High Energy**: 15.9°C → 23°C")
+    with col_b:
+        st.markdown("**Efficiency Output (0-100%):**")
+        st.markdown("- **Very Low**: 0-25%")
+        st.markdown("- **Low**: 20-60%")
+        st.markdown("- **Medium**: 40-80%")
+        st.markdown("- **High**: 75-100%")
