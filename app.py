@@ -149,4 +149,4 @@ with st.expander("📚 View Fuzzy Sets Definition"):
         st.markdown("- **Very Low**: 0-25%")
         st.markdown("- **Low**: 20-60%")
         st.markdown("- **Medium**: 40-80%")
-        st.markdown("- **High**: 75-100%")
+        st.markdown("- **High**: 75-100%")#comment
