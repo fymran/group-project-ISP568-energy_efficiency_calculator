@@ -1,7 +1,7 @@
 
 import streamlit as st
 import numpy as np
-from fuzzy_plug import FuzzyPlug
+from fuzzy_plug import FuzzyPlug#blaa
 from fuzzy_lamp import FuzzyLamp
 from fuzzy_ac import FuzzyAC
 from fuzzy_fan import FuzzyFan
